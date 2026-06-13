@@ -6,6 +6,12 @@ import { searchRecords } from "../aprimo/search.js";
 
 const searchRecordsSchema = z.object({
   query: z.string().min(1).describe("Keyword to search indexed Aprimo fields"),
+  metadataFields: z
+    .array(z.string().min(1))
+    .optional()
+    .describe(
+      "Optional metadata field names, labels, or GUIDs to read from each matching record (for example: Keywords, Copyright, Description)",
+    ),
   page: z.number().int().min(1).optional().describe("1-based page number (default: 1)"),
   pageSize: z
     .number()
@@ -26,12 +32,17 @@ export function registerSearchRecordsTool(
     {
       title: "Search Aprimo Records",
       description:
-        "Search Aprimo DAM records by keyword across configured indexed fields. Returns record IDs, titles, status, and thumbnail URLs.",
+        "Search Aprimo DAM records by keyword across configured indexed fields. Returns record IDs, titles, status, and thumbnail URLs. Optionally include metadataFields to fetch and return specific field values from each matching record.",
       inputSchema: searchRecordsSchema,
     },
-    async ({ query, page, pageSize }) => {
+    async ({ query, metadataFields, page, pageSize }) => {
       try {
-        const results = await searchRecords(client, config, { query, page, pageSize });
+        const results = await searchRecords(client, config, {
+          query,
+          metadataFields,
+          page,
+          pageSize,
+        });
 
         return {
           content: [

@@ -1,10 +1,15 @@
 import type { AprimoClient } from "./client.js";
 import type { AprimoConfig } from "../config.js";
+import {
+  fetchRecordMetadata,
+  type RecordFieldValue,
+} from "./record-metadata.js";
 
 export interface SearchRecordsParams {
   query: string;
   page?: number;
   pageSize?: number;
+  metadataFields?: string[];
 }
 
 export interface SearchRecordResult {
@@ -12,12 +17,14 @@ export interface SearchRecordResult {
   title: string | null;
   status: string | null;
   thumbnailUrl: string | null;
+  metadata?: RecordFieldValue[];
 }
 
 export interface SearchRecordsResponse {
   page: number;
   pageSize: number;
   totalCount: number | null;
+  metadataFields?: string[];
   records: SearchRecordResult[];
 }
 
@@ -115,10 +122,53 @@ export async function searchRecords(
     data._embedded?.items ??
     [];
 
+  const records = rawRecords.map(mapRecord).filter((record) => record.id);
+  const metadataFields = params.metadataFields
+    ?.map((field) => field.trim())
+    .filter(Boolean);
+
+  if (!metadataFields || metadataFields.length === 0) {
+    return {
+      page: data.page ?? page,
+      pageSize: data.pageSize ?? pageSize,
+      totalCount: data.totalCount ?? null,
+      records,
+    };
+  }
+
+  const recordsWithMetadata = await Promise.all(
+    records.map(async (record) => {
+      try {
+        const metadata = await fetchRecordMetadata(
+          client,
+          record.id,
+          metadataFields,
+        );
+
+        return { ...record, metadata };
+      } catch {
+        return {
+          ...record,
+          metadata: metadataFields.map((fieldQuery) => ({
+            fieldQuery,
+            fieldId: null,
+            fieldName: null,
+            label: null,
+            dataType: null,
+            found: false,
+            values: [],
+            valuesByLanguage: [],
+          })),
+        };
+      }
+    }),
+  );
+
   return {
     page: data.page ?? page,
     pageSize: data.pageSize ?? pageSize,
     totalCount: data.totalCount ?? null,
-    records: rawRecords.map(mapRecord).filter((record) => record.id),
+    records: recordsWithMetadata,
+    metadataFields,
   };
 }
