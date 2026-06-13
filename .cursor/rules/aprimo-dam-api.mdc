@@ -1,0 +1,27 @@
+---
+description: Aprimo DAM API reference for MCP server development
+globs: src/aprimo/**,src/tools/**
+alwaysApply: true
+---
+
+# Aprimo DAM API Reference
+
+Use the official Aprimo DAM API documentation as the primary reference when implementing or changing Aprimo integrations in this MCP server:
+
+- Search records (POST `/search/records`): https://developers-api.aprimo.com/#33d066f8-3670-45a3-8df6-69739fef7446
+- Get record by ID (GET `/record/{id}`): https://developers-api.aprimo.com/#707b19c8-11c7-4e23-a1bd-22e0c944f2cb
+- General reference: https://developers-api.aprimo.com/#0b64aa4b-2033-43c2-913d-338eb75676de
+
+## When to consult it
+
+- Adding or modifying MCP tools that call Aprimo
+- Choosing endpoints, request headers, and response shapes
+- Search expressions, select headers (`select-record`, `select-classification`, etc.)
+- Record, field, and classification API behavior
+
+## Project conventions
+
+- Base URL: `https://{tenant}.dam.aprimo.com/api/core/...`
+- Auth: OAuth client credentials; credentials may arrive via request headers or env vars
+- Prefer existing patterns in `src/aprimo/` and `src/aprimo/headers.ts`
+- Do not guess API shapes when the reference or existing code can confirm them

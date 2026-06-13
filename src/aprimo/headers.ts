@@ -12,17 +12,18 @@ export const RECORD_FIELDS_HEADERS: Record<string, string> = {
 
 /** Basic record summary without field metadata (keyword search default). */
 export const SEARCH_RECORD_BASIC_HEADERS: Record<string, string> = {
-  "select-record": "title,thumbnail,status",
+  "select-record": "title,thumbnail,status,contentType,createdOn,modifiedOn",
 };
 
 /** Record GET by ID without field metadata. */
 export const RECORD_SUMMARY_HEADERS: Record<string, string> = {
-  "select-record": "title,status,thumbnail",
+  "select-record": "title,status,thumbnail,contentType,createdOn,modifiedOn",
 };
 
 /** Keyword search with embedded field metadata on each result. */
 export const SEARCH_RECORD_WITH_FIELDS_HEADERS: Record<string, string> = {
-  "select-record": "fields,title,thumbnail,status",
+  "select-record":
+    "fields,title,thumbnail,status,contentType,createdOn,modifiedOn",
   languages: "*",
 };
 

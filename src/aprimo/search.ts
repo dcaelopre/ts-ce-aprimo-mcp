@@ -12,12 +12,20 @@ import {
   fetchRecordMetadata,
   fetchRecordSummary,
   isRecordId,
+  normalizeGuid,
   type RecordFieldValue,
 } from "./record-metadata.js";
+
+export type RecordStatus = "Draft" | "Released" | "Archived";
 
 export interface SearchRecordsParams {
   query?: string;
   recordId?: string;
+  searchExpression?: string;
+  status?: RecordStatus;
+  contentType?: string;
+  classificationId?: string;
+  sort?: string;
   page?: number;
   pageSize?: number;
   metadataFields?: string[];
@@ -28,15 +36,25 @@ export interface SearchRecordResult {
   id: string;
   title: string | null;
   status: string | null;
+  contentType: string | null;
+  createdOn: string | null;
+  modifiedOn: string | null;
   thumbnailUrl: string | null;
   metadata?: RecordFieldValue[];
 }
 
 export interface SearchRecordsResponse {
-  lookupMode: "keyword" | "recordId";
+  lookupMode: "keyword" | "recordId" | "searchExpression";
   page: number;
   pageSize: number;
   totalCount: number | null;
+  searchExpression?: string;
+  sort?: string;
+  filters?: {
+    status?: RecordStatus;
+    contentType?: string;
+    classificationId?: string;
+  };
   metadataFields?: string[];
   includeAllMetadata?: boolean;
   metadataHint?: string;
@@ -44,7 +62,7 @@ export interface SearchRecordsResponse {
 }
 
 const METADATA_HINT =
-  "Only basic record info was returned (id, title, status, thumbnail). Ask the user if they want full metadata (includeAllMetadata=true) or specific fields (metadataFields).";
+  "Only basic record info was returned (id, title, status, contentType, createdOn, modifiedOn, thumbnail). Ask the user if they want full metadata (includeAllMetadata=true) or specific fields (metadataFields).";
 
 interface HalLink {
   href?: string;
@@ -54,6 +72,9 @@ interface HalRecord {
   id?: string;
   title?: string;
   status?: string;
+  contentType?: string;
+  createdOn?: string;
+  modifiedOn?: string;
   thumbnail?: { uri?: string; href?: string };
   _links?: {
     thumbnail?: HalLink;
@@ -79,6 +100,10 @@ interface HalSearchResponse {
   };
 }
 
+function asString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
 function extractThumbnailUrl(record: HalRecord): string | null {
   return (
     record.thumbnail?.uri ??
@@ -92,7 +117,10 @@ function mapRecord(record: HalRecord): SearchRecordResult {
   return {
     id: record.id ?? "",
     title: record.title ?? null,
-    status: record.status ?? null,
+    status: asString(record.status),
+    contentType: asString(record.contentType),
+    createdOn: asString(record.createdOn),
+    modifiedOn: asString(record.modifiedOn),
     thumbnailUrl: extractThumbnailUrl(record),
   };
 }
@@ -101,16 +129,52 @@ function escapeAprimoSearchLiteral(value: string): string {
   return value.replace(/'/g, "''");
 }
 
-function buildKeywordSearchExpression(
-  query: string,
-  searchFields: string[],
-): { expression: string } {
+function buildKeywordClause(query: string, searchFields: string[]): string {
   const term = escapeAprimoSearchLiteral(query.trim());
   const clauses = searchFields.map((field) => `${field} CONTAINS '${term}'`);
+  return `(${clauses.join(" OR ")})`;
+}
 
-  return {
-    expression: clauses.join(" OR "),
-  };
+export function buildRecordSearchExpression(
+  params: Pick<
+    SearchRecordsParams,
+    "query" | "searchExpression" | "status" | "contentType" | "classificationId"
+  >,
+  searchFields: string[],
+): string {
+  const rawExpression = params.searchExpression?.trim();
+  if (rawExpression) {
+    return rawExpression;
+  }
+
+  const clauses: string[] = [];
+  const query = params.query?.trim();
+
+  if (query) {
+    clauses.push(buildKeywordClause(query, searchFields));
+  }
+
+  if (params.status) {
+    clauses.push(`ContentStatus = '${params.status}'`);
+  }
+
+  if (params.contentType?.trim()) {
+    clauses.push(`ContentType = '${escapeAprimoSearchLiteral(params.contentType.trim())}'`);
+  }
+
+  if (params.classificationId?.trim()) {
+    clauses.push(
+      `Classification = '${escapeAprimoSearchLiteral(normalizeGuid(params.classificationId.trim()))}'`,
+    );
+  }
+
+  if (clauses.length === 0) {
+    throw new Error(
+      "Provide a keyword query, searchExpression, or at least one filter (status, contentType, classificationId)",
+    );
+  }
+
+  return clauses.join(" AND ");
 }
 
 function resolveRecordLookup(params: SearchRecordsParams): string | null {
@@ -197,6 +261,23 @@ async function attachMetadataToRecords(
   );
 }
 
+function buildSearchQueryString(
+  page: number,
+  pageSize: number,
+  sort?: string,
+): string {
+  const params = new URLSearchParams({
+    page: String(page),
+    pageSize: String(pageSize),
+  });
+
+  if (sort?.trim()) {
+    params.set("sort", sort.trim());
+  }
+
+  return params.toString();
+}
+
 export async function searchRecords(
   client: AprimoClient,
   config: AprimoConfig,
@@ -241,6 +322,9 @@ export async function searchRecords(
           id: record.id,
           title: record.title,
           status: record.status,
+          contentType: record.contentType,
+          createdOn: record.createdOn,
+          modifiedOn: record.modifiedOn,
           thumbnailUrl: record.thumbnailUrl,
           metadata: record.metadata,
         },
@@ -248,26 +332,30 @@ export async function searchRecords(
     };
   }
 
-  const trimmedQuery = params.query?.trim();
-  if (!trimmedQuery) {
-    throw new Error("Provide a keyword query or a recordId");
-  }
-
   const page = params.page ?? 1;
   const pageSize = params.pageSize ?? 25;
   const wantsMetadata = Boolean(metadataFields?.length || includeAllMetadata);
-  const queryString = new URLSearchParams({
-    page: String(page),
-    pageSize: String(pageSize),
-  }).toString();
+  const expression = buildRecordSearchExpression(params, config.searchFields);
+  const lookupMode = params.searchExpression?.trim()
+    ? "searchExpression"
+    : "keyword";
+
+  const filters = {
+    ...(params.status ? { status: params.status } : {}),
+    ...(params.contentType?.trim()
+      ? { contentType: params.contentType.trim() }
+      : {}),
+    ...(params.classificationId?.trim()
+      ? { classificationId: normalizeGuid(params.classificationId.trim()) }
+      : {}),
+  };
 
   const data = await client.post<HalSearchResponse>(
-    `/api/core/search/records?${queryString}`,
+    `/api/core/search/records?${buildSearchQueryString(page, pageSize, params.sort)}`,
     {
-      searchExpression: buildKeywordSearchExpression(
-        trimmedQuery,
-        config.searchFields,
-      ),
+      searchExpression: {
+        expression,
+      },
     },
     wantsMetadata ? SEARCH_RECORD_WITH_FIELDS_HEADERS : SEARCH_RECORD_BASIC_HEADERS,
   );
@@ -288,10 +376,13 @@ export async function searchRecords(
   );
 
   return {
-    lookupMode: "keyword",
+    lookupMode,
     page: data.page ?? page,
     pageSize: data.pageSize ?? pageSize,
     totalCount: data.totalCount ?? null,
+    searchExpression: expression,
+    ...(params.sort?.trim() ? { sort: params.sort.trim() } : {}),
+    ...(Object.keys(filters).length > 0 ? { filters } : {}),
     records: recordsWithMetadata,
     ...(metadataFields && metadataFields.length > 0 ? { metadataFields } : {}),
     ...(includeAllMetadata ? { includeAllMetadata: true } : {}),

@@ -32,6 +32,9 @@ interface HalRecordWithFields {
   id?: string;
   title?: string | null;
   status?: string | null;
+  contentType?: string | null;
+  createdOn?: string | null;
+  modifiedOn?: string | null;
   thumbnail?: { uri?: string; href?: string };
   _links?: {
     thumbnail?: HalLink;
@@ -49,6 +52,9 @@ export interface RecordWithMetadata {
   id: string;
   title: string | null;
   status: string | null;
+  contentType: string | null;
+  createdOn: string | null;
+  modifiedOn: string | null;
   thumbnailUrl: string | null;
   metadata: RecordFieldValue[];
 }
@@ -318,6 +324,18 @@ export async function fetchRecordMetadata(
   return extractRequestedFieldValues(fields, fieldQueries);
 }
 
+function mapRecordSummary(raw: HalRecordWithFields, id: string): Omit<RecordWithMetadata, "metadata"> {
+  return {
+    id: raw.id ?? id,
+    title: raw.title ?? null,
+    status: asString(raw.status),
+    contentType: asString(raw.contentType),
+    createdOn: asString(raw.createdOn),
+    modifiedOn: asString(raw.modifiedOn),
+    thumbnailUrl: extractThumbnailUrl(raw),
+  };
+}
+
 export async function fetchRecordSummary(
   client: AprimoClient,
   recordId: string,
@@ -335,12 +353,7 @@ export async function fetchRecordSummary(
     RECORD_SUMMARY_HEADERS,
   );
 
-  return {
-    id: data.id ?? normalizedId,
-    title: data.title ?? null,
-    status: data.status ?? null,
-    thumbnailUrl: extractThumbnailUrl(data),
-  };
+  return mapRecordSummary(data, normalizedId);
 }
 
 export async function fetchRecordById(
@@ -385,10 +398,7 @@ export async function fetchRecordById(
     : extractRequestedFieldValues(fields, metadataFields!);
 
   return {
-    id: data.id ?? normalizedId,
-    title: data.title ?? null,
-    status: data.status ?? null,
-    thumbnailUrl: extractThumbnailUrl(data),
+    ...mapRecordSummary(data, normalizedId),
     metadata,
   };
 }

@@ -14,7 +14,7 @@ import { registerSearchClassificationsTool } from "./tools/search-classification
 import { registerSearchFieldDefinitionsTool } from "./tools/search-field-definitions.js";
 import { registerSearchRecordsTool } from "./tools/search-records.js";
 
-const SERVER_VERSION = "1.3.0";
+const SERVER_VERSION = "1.4.0";
 
 function createMcpServer(
   config: AprimoConfig,

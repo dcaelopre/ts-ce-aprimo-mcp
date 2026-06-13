@@ -4,6 +4,8 @@ import type { AprimoClient } from "../aprimo/client.js";
 import type { AprimoConfig } from "../config.js";
 import { searchRecords } from "../aprimo/search.js";
 
+const recordStatusSchema = z.enum(["Draft", "Released", "Archived"]);
+
 const searchRecordsSchema = z
   .object({
     query: z
@@ -16,8 +18,33 @@ const searchRecordsSchema = z
       .min(1)
       .optional()
       .describe(
-        "Aprimo record ID or GUID to look up directly. Returns id, title, status, and thumbnail only unless metadata is explicitly requested.",
+        "Aprimo record ID or GUID to look up directly via GET /record/{id}. Returns basic record info unless metadata is explicitly requested.",
       ),
+    searchExpression: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Advanced Aprimo search expression for POST /search/records. When set, overrides the built-in keyword/filter expression.",
+      ),
+    status: recordStatusSchema
+      .optional()
+      .describe("Filter by record status (ContentStatus in search expression)"),
+    contentType: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Filter by Aprimo content type name"),
+    classificationId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Filter records linked to this classification GUID"),
+    sort: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Sort expression for search results, e.g. ModifiedOn desc"),
     metadataFields: z
       .array(z.string().min(1))
       .optional()
@@ -39,9 +66,21 @@ const searchRecordsSchema = z
       .optional()
       .describe("Results per page (default: 25, max: 100)"),
   })
-  .refine((data) => Boolean(data.query?.trim() || data.recordId?.trim()), {
-    message: "Provide query or recordId",
-  });
+  .refine(
+    (data) =>
+      Boolean(
+        data.query?.trim() ||
+          data.recordId?.trim() ||
+          data.searchExpression?.trim() ||
+          data.status ||
+          data.contentType?.trim() ||
+          data.classificationId?.trim(),
+      ),
+    {
+      message:
+        "Provide query, recordId, searchExpression, or at least one filter (status, contentType, classificationId)",
+    },
+  );
 
 export function registerSearchRecordsTool(
   server: McpServer,
@@ -53,14 +92,31 @@ export function registerSearchRecordsTool(
     {
       title: "Search Aprimo Records",
       description:
-        "Search Aprimo DAM records by keyword or look up a record by recordId / 32-character hex GUID. By default returns only id, title, status, and thumbnail. Do NOT fetch full metadata unless the user explicitly asks — if they look up a record without specifying metadata, ask whether they want full metadata (includeAllMetadata=true) or specific fields (metadataFields). A 32-character hex value in query is treated as a record ID.",
+        "Search Aprimo DAM records via POST /search/records or look up one record by recordId (GET /record/{id}). Supports keyword search, Aprimo searchExpression, status/contentType/classification filters, and sort. By default returns id, title, status, contentType, createdOn, modifiedOn, and thumbnail. Do NOT fetch full metadata unless the user explicitly asks — ask whether they want includeAllMetadata=true or specific metadataFields. A 32-character hex value in query is treated as a record ID.",
       inputSchema: searchRecordsSchema,
     },
-    async ({ query, recordId, metadataFields, includeAllMetadata, page, pageSize }) => {
+    async ({
+      query,
+      recordId,
+      searchExpression,
+      status,
+      contentType,
+      classificationId,
+      sort,
+      metadataFields,
+      includeAllMetadata,
+      page,
+      pageSize,
+    }) => {
       try {
         const results = await searchRecords(client, config, {
           query,
           recordId,
+          searchExpression,
+          status,
+          contentType,
+          classificationId,
+          sort,
           metadataFields,
           includeAllMetadata,
           page,
