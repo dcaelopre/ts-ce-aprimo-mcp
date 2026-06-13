@@ -5,6 +5,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createTokenProvider } from "./aprimo/auth.js";
 import { AprimoClient } from "./aprimo/client.js";
 import { loadConfig, type AprimoConfig } from "./config.js";
+import { registerSearchClassificationsTool } from "./tools/search-classifications.js";
 import { registerSearchFieldDefinitionsTool } from "./tools/search-field-definitions.js";
 import { registerSearchRecordsTool } from "./tools/search-records.js";
 
@@ -14,11 +15,12 @@ function createMcpServer(
 ): McpServer {
   const server = new McpServer({
     name: "aprimo-mcp-server",
-    version: "1.1.0",
+    version: "1.2.0",
   });
 
   registerSearchRecordsTool(server, aprimoClient, config);
   registerSearchFieldDefinitionsTool(server, aprimoClient);
+  registerSearchClassificationsTool(server, aprimoClient);
 
   return server;
 }
@@ -34,7 +36,7 @@ async function main(): Promise<void> {
   app.get("/", (_req, res) => {
     res.json({
       name: "aprimo-mcp-server",
-      version: "1.1.0",
+      version: "1.2.0",
       status: "running",
     });
   });

@@ -25,3 +25,21 @@ export const SEARCH_RECORD_WITH_FIELDS_HEADERS: Record<string, string> = {
   "select-record": "fields,title,thumbnail,status",
   languages: "*",
 };
+
+/** Classification GET with parent and children embedded. */
+export const CLASSIFICATION_WITH_RELATIONS_HEADERS: Record<string, string> = {
+  "select-classification": "parent,children",
+  languages: "*",
+};
+
+/** Classification GET with direct children only. */
+export const CLASSIFICATION_WITH_CHILDREN_HEADERS: Record<string, string> = {
+  "select-classification": "children",
+  languages: "*",
+};
+
+/** Classification search results with parent/children context. */
+export const SEARCH_CLASSIFICATION_HEADERS: Record<string, string> = {
+  "select-classification": "parent,children",
+  languages: "*",
+};
