@@ -92,7 +92,7 @@ export function registerSearchRecordsTool(
     {
       title: "Search Aprimo Records",
       description:
-        "Search Aprimo DAM records via POST /search/records or look up one record by recordId (GET /record/{id}). Supports keyword search, Aprimo searchExpression, status/contentType/classification filters, and sort. By default returns id, title, status, contentType, createdOn, modifiedOn, and thumbnail. Do NOT fetch full metadata unless the user explicitly asks — ask whether they want includeAllMetadata=true or specific metadataFields. A 32-character hex value in query is treated as a record ID.",
+        "Search Aprimo DAM records only (POST /search/records or GET /record/{id}). Supports keyword search, searchExpression, status/contentType/classification filters, and sort. By default returns id, title, status, contentType, createdOn, modifiedOn, and thumbnail. Do NOT fetch full metadata unless the user explicitly asks. A 32-character hex value in query is treated as a record ID.",
       inputSchema: searchRecordsSchema,
     },
     async ({

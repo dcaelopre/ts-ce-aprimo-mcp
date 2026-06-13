@@ -6,7 +6,9 @@ alwaysApply: true
 
 # Aprimo DAM API Reference
 
-Use the official Aprimo DAM API documentation as the primary reference when implementing or changing Aprimo integrations in this MCP server:
+This MCP server integrates with **Aprimo DAM (Digital Asset Management) only** — `{tenant}.dam.aprimo.com/api/core`. It does not cover Marketing Operations, Analytics, or other Aprimo products.
+
+Use the official Aprimo DAM API documentation as the primary reference when implementing or changing integrations in this MCP server:
 
 - Search records (POST `/search/records`): https://developers-api.aprimo.com/#33d066f8-3670-45a3-8df6-69739fef7446
 - Get record by ID (GET `/record/{id}`): https://developers-api.aprimo.com/#707b19c8-11c7-4e23-a1bd-22e0c944f2cb

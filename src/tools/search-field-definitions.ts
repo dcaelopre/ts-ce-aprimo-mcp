@@ -46,7 +46,7 @@ export function registerSearchFieldDefinitionsTool(
     {
       title: "Search Aprimo Field Definitions",
       description:
-        "Look up Aprimo DAM field definitions by GUID, internal name, display label, and/or data type. Returns matchCount (total fields found), data type, required/read-only flags, validation, scope, and type-specific configuration.",
+        "Look up Aprimo DAM field definitions only — GUID, internal name, display label, and/or data type. Returns matchCount, data type, required/read-only flags, validation, scope, and type-specific configuration.",
       inputSchema: searchFieldDefinitionsSchema,
     },
     async ({ query, dataType, page, pageSize }) => {

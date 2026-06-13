@@ -10,21 +10,27 @@ import {
   resolveConfig,
   type AprimoConfig,
 } from "./config.js";
+import { registerRecommendApiRouteTool } from "./tools/recommend-api-route.js";
 import { registerSearchClassificationsTool } from "./tools/search-classifications.js";
 import { registerSearchFieldDefinitionsTool } from "./tools/search-field-definitions.js";
 import { registerSearchRecordsTool } from "./tools/search-records.js";
+import {
+  APRIMO_DAM_BASE_URL_PATTERN,
+  APRIMO_DAM_SCOPE,
+} from "./aprimo/scope.js";
 
-const SERVER_VERSION = "1.4.0";
+const SERVER_VERSION = "1.5.2";
 
 function createMcpServer(
   config: AprimoConfig,
   aprimoClient: AprimoClient,
 ): McpServer {
   const server = new McpServer({
-    name: "aprimo-mcp-server",
+    name: "aprimo-dam-mcp-server",
     version: SERVER_VERSION,
   });
 
+  registerRecommendApiRouteTool(server);
   registerSearchRecordsTool(server, aprimoClient, config);
   registerSearchFieldDefinitionsTool(server, aprimoClient);
   registerSearchClassificationsTool(server, aprimoClient);
@@ -38,9 +44,11 @@ async function main(): Promise<void> {
 
   app.get("/", (_req, res) => {
     res.json({
-      name: "aprimo-mcp-server",
+      name: "aprimo-dam-mcp-server",
       version: SERVER_VERSION,
       status: "running",
+      scope: APRIMO_DAM_SCOPE,
+      apiBase: APRIMO_DAM_BASE_URL_PATTERN,
       credentialSource:
         "Request headers (X-Aprimo-Environment, X-Aprimo-Client-Id, X-Aprimo-Client-Secret) or server env vars",
     });
@@ -95,7 +103,7 @@ async function main(): Promise<void> {
   const port = Number(process.env.PORT) || 3000;
 
   app.listen(port, () => {
-    console.log(`Aprimo MCP Server listening on port ${port}`);
+    console.log(`Aprimo DAM MCP Server listening on port ${port}`);
     console.log(
       "Aprimo credentials: per-request headers or APRIMO_* environment variables",
     );

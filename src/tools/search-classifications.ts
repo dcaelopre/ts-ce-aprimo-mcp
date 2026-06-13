@@ -52,7 +52,7 @@ export function registerSearchClassificationsTool(
     {
       title: "Search Aprimo Classifications",
       description:
-        "Read Aprimo DAM taxonomy classifications by GUID, name, identifier, or label. Use parentId alone to list direct children of a classification. Returns paths, labels, hierarchy info, and optional child nodes.",
+        "Read Aprimo DAM taxonomy classifications only — by GUID, name, identifier, or label. Use parentId alone to list direct children. Returns paths, labels, hierarchy info, and optional child nodes.",
       inputSchema: searchClassificationsSchema,
     },
     async ({ query, parentId, includeChildren, page, pageSize }) => {
