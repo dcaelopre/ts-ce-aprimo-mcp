@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "description": "MCP server for Aprimo DAM search",
   "type": "module",
-  "scripts": {
-    "start": "tsx src/index.ts",
-    "build": "tsc",
-    "typecheck": "tsc --noEmit"
-  },
+"scripts": {
+  "start": "node dist/index.js",
+  "build": "tsc",
+  "typecheck": "tsc --noEmit"
+},
   "keywords": [],
   "author": "",
   "license": "ISC",
