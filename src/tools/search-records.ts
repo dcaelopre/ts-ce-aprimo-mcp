@@ -16,13 +16,19 @@ const searchRecordsSchema = z
       .min(1)
       .optional()
       .describe(
-        "Aprimo record ID or GUID to look up directly. Returns record details and metadata.",
+        "Aprimo record ID or GUID to look up directly. Returns id, title, status, and thumbnail only unless metadata is explicitly requested.",
       ),
     metadataFields: z
       .array(z.string().min(1))
       .optional()
       .describe(
-        "Optional metadata field names, labels, or GUIDs to read from each record. When using recordId and omitted, all fields are returned.",
+        "Specific metadata field names, labels, or GUIDs to return. Only use when the user asks for these fields.",
+      ),
+    includeAllMetadata: z
+      .boolean()
+      .optional()
+      .describe(
+        "When true, returns all metadata fields. Only set this when the user explicitly asks for full record metadata.",
       ),
     page: z.number().int().min(1).optional().describe("1-based page number (default: 1)"),
     pageSize: z
@@ -47,15 +53,16 @@ export function registerSearchRecordsTool(
     {
       title: "Search Aprimo Records",
       description:
-        "Search Aprimo DAM records by keyword or look up a single record by recordId (32-character hex ID or GUID). Returns record IDs, titles, status, thumbnail URLs, and metadata. When recordId is used, all field metadata is returned unless metadataFields limits the response.",
+        "Search Aprimo DAM records by keyword or look up a record by recordId / 32-character hex GUID. By default returns only id, title, status, and thumbnail. Do NOT fetch full metadata unless the user explicitly asks — if they look up a record without specifying metadata, ask whether they want full metadata (includeAllMetadata=true) or specific fields (metadataFields). A 32-character hex value in query is treated as a record ID.",
       inputSchema: searchRecordsSchema,
     },
-    async ({ query, recordId, metadataFields, page, pageSize }) => {
+    async ({ query, recordId, metadataFields, includeAllMetadata, page, pageSize }) => {
       try {
         const results = await searchRecords(client, config, {
           query,
           recordId,
           metadataFields,
+          includeAllMetadata,
           page,
           pageSize,
         });

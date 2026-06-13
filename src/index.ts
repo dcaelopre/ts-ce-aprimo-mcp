@@ -14,7 +14,7 @@ function createMcpServer(
 ): McpServer {
   const server = new McpServer({
     name: "aprimo-mcp-server",
-    version: "1.0.0",
+    version: "1.1.0",
   });
 
   registerSearchRecordsTool(server, aprimoClient, config);
@@ -32,7 +32,11 @@ async function main(): Promise<void> {
   app.use(express.json());
 
   app.get("/", (_req, res) => {
-    res.send("Aprimo MCP Server is running.");
+    res.json({
+      name: "aprimo-mcp-server",
+      version: "1.1.0",
+      status: "running",
+    });
   });
 
   app.post("/mcp", async (req, res) => {

@@ -1,4 +1,9 @@
 import type { AprimoClient } from "./client.js";
+import {
+  RECORD_FIELDS_HEADERS,
+  RECORD_SUMMARY_HEADERS,
+  RECORD_WITH_METADATA_HEADERS,
+} from "./headers.js";
 
 export interface RecordFieldValue {
   fieldQuery: string;
@@ -32,9 +37,11 @@ interface HalRecordWithFields {
     thumbnail?: HalLink;
   };
   _embedded?: {
-    fields?: {
-      items?: RawRecordField[];
-    };
+    fields?:
+      | RawRecordField[]
+      | {
+          items?: RawRecordField[];
+        };
   };
 }
 
@@ -252,10 +259,36 @@ export function extractRequestedFieldValues(
   });
 }
 
-function mapAllFieldValues(fields: RawRecordField[]): RecordFieldValue[] {
+export function buildAllFieldMetadata(fields: RawRecordField[]): RecordFieldValue[] {
   return fields.map((field) =>
     buildFieldValue(field.fieldName ?? field.label ?? field.id ?? "unknown", field),
   );
+}
+
+export function extractFieldsFromRecord(data: HalRecordWithFields): RawRecordField[] {
+  const embeddedFields = data._embedded?.fields;
+
+  if (Array.isArray(embeddedFields)) {
+    return embeddedFields;
+  }
+
+  if (embeddedFields && Array.isArray(embeddedFields.items)) {
+    return embeddedFields.items;
+  }
+
+  return [];
+}
+
+async function fetchFieldsSubResource(
+  client: AprimoClient,
+  recordId: string,
+): Promise<RawRecordField[]> {
+  const data = await client.get<{ items?: RawRecordField[] }>(
+    `/api/core/record/${recordId}/fields`,
+    RECORD_FIELDS_HEADERS,
+  );
+
+  return data.items ?? [];
 }
 
 export async function fetchRecordFields(
@@ -263,12 +296,17 @@ export async function fetchRecordFields(
   recordId: string,
 ): Promise<RawRecordField[]> {
   const normalizedId = normalizeGuid(recordId);
-  const data = await client.get<HalRecordWithFields>(`/api/core/record/${normalizedId}`, {
-    "select-record": "fields,title,status,thumbnail",
-    languages: "*",
-  });
+  const data = await client.get<HalRecordWithFields>(
+    `/api/core/record/${normalizedId}`,
+    RECORD_WITH_METADATA_HEADERS,
+  );
 
-  return data._embedded?.fields?.items ?? [];
+  const embeddedFields = extractFieldsFromRecord(data);
+  if (embeddedFields.length > 0) {
+    return embeddedFields;
+  }
+
+  return fetchFieldsSubResource(client, normalizedId);
 }
 
 export async function fetchRecordMetadata(
@@ -280,11 +318,10 @@ export async function fetchRecordMetadata(
   return extractRequestedFieldValues(fields, fieldQueries);
 }
 
-export async function fetchRecordById(
+export async function fetchRecordSummary(
   client: AprimoClient,
   recordId: string,
-  fieldQueries?: string[],
-): Promise<RecordWithMetadata> {
+): Promise<Omit<RecordWithMetadata, "metadata">> {
   const trimmedId = recordId.trim();
   if (!isRecordId(trimmedId)) {
     throw new Error(
@@ -293,17 +330,59 @@ export async function fetchRecordById(
   }
 
   const normalizedId = normalizeGuid(trimmedId);
-  const data = await client.get<HalRecordWithFields>(`/api/core/record/${normalizedId}`, {
-    "select-record": "fields,title,status,thumbnail",
-    languages: "*",
-  });
+  const data = await client.get<HalRecordWithFields>(
+    `/api/core/record/${normalizedId}`,
+    RECORD_SUMMARY_HEADERS,
+  );
 
-  const fields = data._embedded?.fields?.items ?? [];
-  const resolvedFieldQueries = fieldQueries?.map((field) => field.trim()).filter(Boolean);
-  const metadata =
-    resolvedFieldQueries && resolvedFieldQueries.length > 0
-      ? extractRequestedFieldValues(fields, resolvedFieldQueries)
-      : mapAllFieldValues(fields);
+  return {
+    id: data.id ?? normalizedId,
+    title: data.title ?? null,
+    status: data.status ?? null,
+    thumbnailUrl: extractThumbnailUrl(data),
+  };
+}
+
+export async function fetchRecordById(
+  client: AprimoClient,
+  recordId: string,
+  options: {
+    metadataFields?: string[];
+    includeAllMetadata?: boolean;
+  },
+): Promise<RecordWithMetadata> {
+  const trimmedId = recordId.trim();
+  if (!isRecordId(trimmedId)) {
+    throw new Error(
+      "recordId must be a 32-character hex Aprimo record ID or GUID",
+    );
+  }
+
+  const metadataFields = options.metadataFields
+    ?.map((field) => field.trim())
+    .filter(Boolean);
+  const includeAllMetadata = options.includeAllMetadata === true;
+
+  if (!includeAllMetadata && (!metadataFields || metadataFields.length === 0)) {
+    throw new Error(
+      "Pass includeAllMetadata=true or metadataFields to retrieve field values",
+    );
+  }
+
+  const normalizedId = normalizeGuid(trimmedId);
+  const data = await client.get<HalRecordWithFields>(
+    `/api/core/record/${normalizedId}`,
+    RECORD_WITH_METADATA_HEADERS,
+  );
+
+  let fields = extractFieldsFromRecord(data);
+  if (fields.length === 0) {
+    fields = await fetchFieldsSubResource(client, normalizedId);
+  }
+
+  const metadata = includeAllMetadata
+    ? buildAllFieldMetadata(fields)
+    : extractRequestedFieldValues(fields, metadataFields!);
 
   return {
     id: data.id ?? normalizedId,
