@@ -4,23 +4,38 @@ import type { AprimoClient } from "../aprimo/client.js";
 import type { AprimoConfig } from "../config.js";
 import { searchRecords } from "../aprimo/search.js";
 
-const searchRecordsSchema = z.object({
-  query: z.string().min(1).describe("Keyword to search indexed Aprimo fields"),
-  metadataFields: z
-    .array(z.string().min(1))
-    .optional()
-    .describe(
-      "Optional metadata field names, labels, or GUIDs to read from each matching record (for example: Keywords, Copyright, Description)",
-    ),
-  page: z.number().int().min(1).optional().describe("1-based page number (default: 1)"),
-  pageSize: z
-    .number()
-    .int()
-    .min(1)
-    .max(100)
-    .optional()
-    .describe("Results per page (default: 25, max: 100)"),
-});
+const searchRecordsSchema = z
+  .object({
+    query: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Keyword to search indexed Aprimo fields"),
+    recordId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Aprimo record ID or GUID to look up directly. Returns record details and metadata.",
+      ),
+    metadataFields: z
+      .array(z.string().min(1))
+      .optional()
+      .describe(
+        "Optional metadata field names, labels, or GUIDs to read from each record. When using recordId and omitted, all fields are returned.",
+      ),
+    page: z.number().int().min(1).optional().describe("1-based page number (default: 1)"),
+    pageSize: z
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .optional()
+      .describe("Results per page (default: 25, max: 100)"),
+  })
+  .refine((data) => Boolean(data.query?.trim() || data.recordId?.trim()), {
+    message: "Provide query or recordId",
+  });
 
 export function registerSearchRecordsTool(
   server: McpServer,
@@ -32,13 +47,14 @@ export function registerSearchRecordsTool(
     {
       title: "Search Aprimo Records",
       description:
-        "Search Aprimo DAM records by keyword across configured indexed fields. Returns record IDs, titles, status, and thumbnail URLs. Optionally include metadataFields to fetch and return specific field values from each matching record.",
+        "Search Aprimo DAM records by keyword or look up a single record by recordId (32-character hex ID or GUID). Returns record IDs, titles, status, thumbnail URLs, and metadata. When recordId is used, all field metadata is returned unless metadataFields limits the response.",
       inputSchema: searchRecordsSchema,
     },
-    async ({ query, metadataFields, page, pageSize }) => {
+    async ({ query, recordId, metadataFields, page, pageSize }) => {
       try {
         const results = await searchRecords(client, config, {
           query,
+          recordId,
           metadataFields,
           page,
           pageSize,

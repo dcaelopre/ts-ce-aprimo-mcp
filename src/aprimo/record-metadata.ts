@@ -19,9 +19,18 @@ type RawRecordField = Record<string, unknown> & {
   localizedValues?: Array<Record<string, unknown>>;
 };
 
+interface HalLink {
+  href?: string;
+}
+
 interface HalRecordWithFields {
   id?: string;
   title?: string | null;
+  status?: string | null;
+  thumbnail?: { uri?: string; href?: string };
+  _links?: {
+    thumbnail?: HalLink;
+  };
   _embedded?: {
     fields?: {
       items?: RawRecordField[];
@@ -29,15 +38,39 @@ interface HalRecordWithFields {
   };
 }
 
+export interface RecordWithMetadata {
+  id: string;
+  title: string | null;
+  status: string | null;
+  thumbnailUrl: string | null;
+  metadata: RecordFieldValue[];
+}
+
 const GUID_PATTERN =
   /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
 
-function normalizeGuid(value: string): string {
+const RECORD_ID_PATTERN = /^[0-9a-f]{32}$/i;
+
+export function normalizeGuid(value: string): string {
   return value.replace(/-/g, "").toLowerCase();
 }
 
-function isGuid(value: string): boolean {
+export function isGuid(value: string): boolean {
   return GUID_PATTERN.test(value.trim());
+}
+
+export function isRecordId(value: string): boolean {
+  const trimmed = value.trim();
+  return RECORD_ID_PATTERN.test(trimmed) || isGuid(trimmed);
+}
+
+function extractThumbnailUrl(record: HalRecordWithFields): string | null {
+  return (
+    record.thumbnail?.uri ??
+    record.thumbnail?.href ??
+    record._links?.thumbnail?.href ??
+    null
+  );
 }
 
 function normalizeText(value: string): string {
@@ -219,13 +252,19 @@ export function extractRequestedFieldValues(
   });
 }
 
+function mapAllFieldValues(fields: RawRecordField[]): RecordFieldValue[] {
+  return fields.map((field) =>
+    buildFieldValue(field.fieldName ?? field.label ?? field.id ?? "unknown", field),
+  );
+}
+
 export async function fetchRecordFields(
   client: AprimoClient,
   recordId: string,
 ): Promise<RawRecordField[]> {
   const normalizedId = normalizeGuid(recordId);
   const data = await client.get<HalRecordWithFields>(`/api/core/record/${normalizedId}`, {
-    "select-record": "fields,title",
+    "select-record": "fields,title,status,thumbnail",
     languages: "*",
   });
 
@@ -239,4 +278,38 @@ export async function fetchRecordMetadata(
 ): Promise<RecordFieldValue[]> {
   const fields = await fetchRecordFields(client, recordId);
   return extractRequestedFieldValues(fields, fieldQueries);
+}
+
+export async function fetchRecordById(
+  client: AprimoClient,
+  recordId: string,
+  fieldQueries?: string[],
+): Promise<RecordWithMetadata> {
+  const trimmedId = recordId.trim();
+  if (!isRecordId(trimmedId)) {
+    throw new Error(
+      "recordId must be a 32-character hex Aprimo record ID or GUID",
+    );
+  }
+
+  const normalizedId = normalizeGuid(trimmedId);
+  const data = await client.get<HalRecordWithFields>(`/api/core/record/${normalizedId}`, {
+    "select-record": "fields,title,status,thumbnail",
+    languages: "*",
+  });
+
+  const fields = data._embedded?.fields?.items ?? [];
+  const resolvedFieldQueries = fieldQueries?.map((field) => field.trim()).filter(Boolean);
+  const metadata =
+    resolvedFieldQueries && resolvedFieldQueries.length > 0
+      ? extractRequestedFieldValues(fields, resolvedFieldQueries)
+      : mapAllFieldValues(fields);
+
+  return {
+    id: data.id ?? normalizedId,
+    title: data.title ?? null,
+    status: data.status ?? null,
+    thumbnailUrl: extractThumbnailUrl(data),
+    metadata,
+  };
 }

@@ -1,12 +1,14 @@
 import type { AprimoClient } from "./client.js";
 import type { AprimoConfig } from "../config.js";
 import {
+  fetchRecordById,
   fetchRecordMetadata,
   type RecordFieldValue,
 } from "./record-metadata.js";
 
 export interface SearchRecordsParams {
-  query: string;
+  query?: string;
+  recordId?: string;
   page?: number;
   pageSize?: number;
   metadataFields?: string[];
@@ -21,6 +23,7 @@ export interface SearchRecordResult {
 }
 
 export interface SearchRecordsResponse {
+  lookupMode: "keyword" | "recordId";
   page: number;
   pageSize: number;
   totalCount: number | null;
@@ -93,9 +96,36 @@ export async function searchRecords(
   config: AprimoConfig,
   params: SearchRecordsParams,
 ): Promise<SearchRecordsResponse> {
-  const trimmedQuery = params.query.trim();
+  const metadataFields = params.metadataFields
+    ?.map((field) => field.trim())
+    .filter(Boolean);
+
+  if (params.recordId?.trim()) {
+    const record = await fetchRecordById(client, params.recordId, metadataFields);
+
+    return {
+      lookupMode: "recordId",
+      page: 1,
+      pageSize: 1,
+      totalCount: 1,
+      ...(metadataFields && metadataFields.length > 0
+        ? { metadataFields }
+        : {}),
+      records: [
+        {
+          id: record.id,
+          title: record.title,
+          status: record.status,
+          thumbnailUrl: record.thumbnailUrl,
+          metadata: record.metadata,
+        },
+      ],
+    };
+  }
+
+  const trimmedQuery = params.query?.trim();
   if (!trimmedQuery) {
-    throw new Error("Search query cannot be empty");
+    throw new Error("Provide a keyword query or a recordId");
   }
 
   const page = params.page ?? 1;
@@ -123,12 +153,10 @@ export async function searchRecords(
     [];
 
   const records = rawRecords.map(mapRecord).filter((record) => record.id);
-  const metadataFields = params.metadataFields
-    ?.map((field) => field.trim())
-    .filter(Boolean);
 
   if (!metadataFields || metadataFields.length === 0) {
     return {
+      lookupMode: "keyword",
       page: data.page ?? page,
       pageSize: data.pageSize ?? pageSize,
       totalCount: data.totalCount ?? null,
@@ -165,6 +193,7 @@ export async function searchRecords(
   );
 
   return {
+    lookupMode: "keyword",
     page: data.page ?? page,
     pageSize: data.pageSize ?? pageSize,
     totalCount: data.totalCount ?? null,
