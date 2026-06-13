@@ -4,10 +4,17 @@ import express from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createTokenProvider } from "./aprimo/auth.js";
 import { AprimoClient } from "./aprimo/client.js";
-import { loadConfig, type AprimoConfig } from "./config.js";
+import {
+  APRIMO_CREDENTIAL_HEADERS,
+  AprimoConfigError,
+  resolveConfig,
+  type AprimoConfig,
+} from "./config.js";
 import { registerSearchClassificationsTool } from "./tools/search-classifications.js";
 import { registerSearchFieldDefinitionsTool } from "./tools/search-field-definitions.js";
 import { registerSearchRecordsTool } from "./tools/search-records.js";
+
+const SERVER_VERSION = "1.3.0";
 
 function createMcpServer(
   config: AprimoConfig,
@@ -15,7 +22,7 @@ function createMcpServer(
 ): McpServer {
   const server = new McpServer({
     name: "aprimo-mcp-server",
-    version: "1.2.0",
+    version: SERVER_VERSION,
   });
 
   registerSearchRecordsTool(server, aprimoClient, config);
@@ -26,22 +33,42 @@ function createMcpServer(
 }
 
 async function main(): Promise<void> {
-  const config = loadConfig();
-  const getToken = createTokenProvider(config);
-  const aprimoClient = new AprimoClient(config, getToken);
-
   const app = express();
   app.use(express.json());
 
   app.get("/", (_req, res) => {
     res.json({
       name: "aprimo-mcp-server",
-      version: "1.2.0",
+      version: SERVER_VERSION,
       status: "running",
+      credentialSource:
+        "Request headers (X-Aprimo-Environment, X-Aprimo-Client-Id, X-Aprimo-Client-Secret) or server env vars",
     });
   });
 
   app.post("/mcp", async (req, res) => {
+    let config: AprimoConfig;
+
+    try {
+      config = resolveConfig(req.headers);
+    } catch (error) {
+      const message =
+        error instanceof AprimoConfigError
+          ? error.message
+          : "Missing Aprimo credentials";
+
+      if (!res.headersSent) {
+        res.status(401).json({
+          error: message,
+          requiredHeaders: Object.values(APRIMO_CREDENTIAL_HEADERS),
+        });
+      }
+
+      return;
+    }
+
+    const getToken = createTokenProvider(config);
+    const aprimoClient = new AprimoClient(config, getToken);
     const server = createMcpServer(config, aprimoClient);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
@@ -69,6 +96,9 @@ async function main(): Promise<void> {
 
   app.listen(port, () => {
     console.log(`Aprimo MCP Server listening on port ${port}`);
+    console.log(
+      "Aprimo credentials: per-request headers or APRIMO_* environment variables",
+    );
   });
 
   process.on("SIGINT", async () => {
