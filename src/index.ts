@@ -4,15 +4,14 @@ import express from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createTokenProvider } from "./aprimo/auth.js";
 import { AprimoClient } from "./aprimo/client.js";
-import { loadConfig } from "./config.js";
+import { loadConfig, type AprimoConfig } from "./config.js";
 import { registerSearchFieldDefinitionsTool } from "./tools/search-field-definitions.js";
 import { registerSearchRecordsTool } from "./tools/search-records.js";
 
-async function main(): Promise<void> {
-  const config = loadConfig();
-  const getToken = createTokenProvider(config);
-  const aprimoClient = new AprimoClient(config, getToken);
-
+function createMcpServer(
+  config: AprimoConfig,
+  aprimoClient: AprimoClient,
+): McpServer {
   const server = new McpServer({
     name: "aprimo-mcp-server",
     version: "1.0.0",
@@ -21,30 +20,52 @@ async function main(): Promise<void> {
   registerSearchRecordsTool(server, aprimoClient, config);
   registerSearchFieldDefinitionsTool(server, aprimoClient);
 
-const app = express();
-app.use(express.json());
+  return server;
+}
 
-app.get("/", (_req, res) => {
-  res.send("Aprimo MCP Server is running.");
-});
+async function main(): Promise<void> {
+  const config = loadConfig();
+  const getToken = createTokenProvider(config);
+  const aprimoClient = new AprimoClient(config, getToken);
 
-app.post("/mcp", async (req, res) => {
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
+  const app = express();
+  app.use(express.json());
+
+  app.get("/", (_req, res) => {
+    res.send("Aprimo MCP Server is running.");
   });
 
-  await server.connect(transport);
-  await transport.handleRequest(req, res, req.body);
-});
+  app.post("/mcp", async (req, res) => {
+    const server = createMcpServer(config, aprimoClient);
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+    });
 
-const port = Number(process.env.PORT) || 3000;
+    res.on("close", () => {
+      transport.close().catch(() => undefined);
+      server.close().catch(() => undefined);
+    });
 
-app.listen(port, () => {
-  console.log(`Aprimo MCP Server listening on port ${port}`);
-});
+    try {
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+    } catch (error) {
+      console.error("MCP request failed:", error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          error: "Internal server error",
+        });
+      }
+    }
+  });
+
+  const port = Number(process.env.PORT) || 3000;
+
+  app.listen(port, () => {
+    console.log(`Aprimo MCP Server listening on port ${port}`);
+  });
 
   process.on("SIGINT", async () => {
-    await server.close();
     process.exit(0);
   });
 }
