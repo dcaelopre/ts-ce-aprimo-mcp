@@ -10,7 +10,6 @@ import {
   resolveConfig,
   type AprimoConfig,
 } from "./config.js";
-import { registerRecommendApiRouteTool } from "./tools/recommend-api-route.js";
 import { registerSearchClassificationsTool } from "./tools/search-classifications.js";
 import { registerSearchFieldDefinitionsTool } from "./tools/search-field-definitions.js";
 import { registerSearchRecordsTool } from "./tools/search-records.js";
@@ -19,7 +18,7 @@ import {
   APRIMO_DAM_SCOPE,
 } from "./aprimo/scope.js";
 
-const SERVER_VERSION = "1.5.2";
+const SERVER_VERSION = "1.6.0";
 
 function createMcpServer(
   config: AprimoConfig,
@@ -30,7 +29,6 @@ function createMcpServer(
     version: SERVER_VERSION,
   });
 
-  registerRecommendApiRouteTool(server);
   registerSearchRecordsTool(server, aprimoClient, config);
   registerSearchFieldDefinitionsTool(server, aprimoClient);
   registerSearchClassificationsTool(server, aprimoClient);

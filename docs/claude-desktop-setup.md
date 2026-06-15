@@ -1,6 +1,6 @@
 # Aprimo DAM MCP Server — Claude Desktop Setup
 
-This guide explains how to connect **Claude Desktop** to the shared **Aprimo DAM** MCP server so you can search assets, read metadata, browse taxonomy, and get API route recommendations from Claude.
+This guide explains how to connect **Claude Desktop** to the shared **Aprimo DAM** MCP server so you can search assets, read metadata, and browse taxonomy from Claude.
 
 **Scope:** Aprimo DAM (Digital Asset Management) only — `{tenant}.dam.aprimo.com`. Not Marketing Operations or other Aprimo products.
 
@@ -140,15 +140,10 @@ Fully quit Claude Desktop and open it again. MCP servers load at startup.
    - `search_records` — find assets and read basic info
    - `search_classifications` — browse taxonomy
    - `search_field_definitions` — look up metadata field schema
-   - `recommend_aprimo_api_route` — ask which DAM API route to use (no live API call)
 
 4. Try a prompt, for example:
 
    > Search Aprimo for records with “logo” in the title that are Released.
-
-   or
-
-   > Which Aprimo DAM API should I use to download the original master file?
 
 ---
 
@@ -157,7 +152,6 @@ Fully quit Claude Desktop and open it again. MCP servers load at startup.
 - “Search Aprimo DAM for released images matching ‘brand guidelines’.”
 - “Look up classification Marketing under parent ID …”
 - “What fields are defined for data type OptionList?”
-- “What API route should I use to create a download order for a record?”
 - “Get record `abc123…` by ID and show title, status, and content type only.”
 
 By default, record search returns **basic fields only** (id, title, status, contentType, dates, thumbnail). Ask Claude explicitly if you need full metadata or specific fields.
