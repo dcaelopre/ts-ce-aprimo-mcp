@@ -1,7 +1,7 @@
 {
   "name": "aprimo-mcp-server",
   "version": "1.0.0",
-  "description": "MCP server for Aprimo DAM (Digital Asset Management) — search, metadata, and taxonomy",
+  "description": "MCP server for Aprimo DAM (Digital Asset Management) — search, metadata, taxonomy, and rules",
   "type": "module",
 "scripts": {
   "start": "node dist/index.js",

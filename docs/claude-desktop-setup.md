@@ -140,6 +140,7 @@ Fully quit Claude Desktop and open it again. MCP servers load at startup.
    - `search_records` — find assets and read basic info
    - `search_classifications` — browse taxonomy
    - `search_field_definitions` — look up metadata field schema
+   - `search_rules` — read DAM automation rules, conditions, and actions
 
 4. Try a prompt, for example:
 
@@ -152,6 +153,8 @@ Fully quit Claude Desktop and open it again. MCP servers load at startup.
 - “Search Aprimo DAM for released images matching ‘brand guidelines’.”
 - “Look up classification Marketing under parent ID …”
 - “What fields are defined for data type OptionList?”
+- “List enabled Record rules”
+- “Show me the conditions and actions for rule X”
 - “Get record `abc123…` by ID and show title, status, and content type only.”
 
 By default, record search returns **basic fields only** (id, title, status, contentType, dates, thumbnail). Ask Claude explicitly if you need full metadata or specific fields.

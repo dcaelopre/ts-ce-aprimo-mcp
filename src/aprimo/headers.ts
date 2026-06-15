@@ -44,3 +44,13 @@ export const SEARCH_CLASSIFICATION_HEADERS: Record<string, string> = {
   "select-classification": "parent,children",
   languages: "*",
 };
+
+/** Rule list/summary without conditions or actions. */
+export const RULE_SUMMARY_HEADERS: Record<string, string> = {
+  "select-rule": "createdby,modifiedby",
+};
+
+/** Rule GET with embedded conditions and actions. */
+export const RULE_WITH_DETAILS_HEADERS: Record<string, string> = {
+  "select-rule": "conditions,actions,createdby,modifiedby",
+};
