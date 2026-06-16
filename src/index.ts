@@ -14,12 +14,13 @@ import { registerSearchRulesTool } from "./tools/search-rules.js";
 import { registerSearchClassificationsTool } from "./tools/search-classifications.js";
 import { registerSearchFieldDefinitionsTool } from "./tools/search-field-definitions.js";
 import { registerSearchRecordsTool } from "./tools/search-records.js";
+import { registerSearchSettingsTool } from "./tools/search-settings.js";
 import {
   APRIMO_DAM_BASE_URL_PATTERN,
   APRIMO_DAM_SCOPE,
 } from "./aprimo/scope.js";
 
-const SERVER_VERSION = "1.7.0";
+const SERVER_VERSION = "1.8.0";
 
 function createMcpServer(
   config: AprimoConfig,
@@ -34,6 +35,7 @@ function createMcpServer(
   registerSearchFieldDefinitionsTool(server, aprimoClient);
   registerSearchClassificationsTool(server, aprimoClient);
   registerSearchRulesTool(server, aprimoClient);
+  registerSearchSettingsTool(server, aprimoClient);
 
   return server;
 }

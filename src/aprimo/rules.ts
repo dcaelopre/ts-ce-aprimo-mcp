@@ -1,4 +1,5 @@
 import type { AprimoClient } from "./client.js";
+import { fetchClassificationById } from "./classifications.js";
 import {
   RULE_SUMMARY_HEADERS,
   RULE_WITH_DETAILS_HEADERS,
@@ -39,15 +40,29 @@ export interface SearchRulesParams {
   pageSize?: number;
 }
 
+export interface ResolvedClassification {
+  id: string;
+  name: string;
+  identifier: string;
+  label: string | null;
+  path: string;
+  namePath: string | null;
+  labelPath: string | null;
+}
+
 export interface RuleConditionSummary {
   conditionType: string;
   index: number | null;
+  classification?: ResolvedClassification;
+  classifications?: ResolvedClassification[];
   details: Record<string, unknown>;
 }
 
 export interface RuleActionSummary {
   actionType: string;
   index: number | null;
+  classification?: ResolvedClassification;
+  classifications?: ResolvedClassification[];
   details: Record<string, unknown>;
 }
 
@@ -192,6 +207,132 @@ function summarizeActionItem(item: Record<string, unknown>): RuleActionSummary {
   };
 }
 
+function formatClassificationPath(
+  namePath: string | null,
+  labelPath: string | null,
+  name: string,
+): string {
+  const raw = labelPath?.trim() || namePath?.trim();
+  if (!raw) {
+    return name;
+  }
+
+  const segments = raw
+    .split(/[\\/]+/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+  return segments.length > 0 ? segments.join(" > ") : name;
+}
+
+function primaryClassificationLabel(
+  name: string,
+  labels: Array<{ languageId: string; value: string }>,
+): string | null {
+  const firstLabel = labels.find((entry) => entry.value.trim().length > 0);
+  return firstLabel?.value ?? (name.trim().length > 0 ? name : null);
+}
+
+function collectClassificationIds(details: Record<string, unknown>): string[] {
+  const ids: string[] = [];
+  const singleId = asString(details.classificationId);
+
+  if (singleId) {
+    ids.push(singleId);
+  }
+
+  const multipleIds = details.classificationIds;
+  if (Array.isArray(multipleIds)) {
+    for (const id of multipleIds) {
+      if (typeof id === "string" && id.trim()) {
+        ids.push(id.trim());
+      }
+    }
+  }
+
+  return [...new Set(ids.map((id) => normalizeGuid(id)))];
+}
+
+async function resolveClassification(
+  client: AprimoClient,
+  id: string,
+  cache: Map<string, ResolvedClassification | null>,
+): Promise<ResolvedClassification | null> {
+  const normalizedId = normalizeGuid(id);
+  if (cache.has(normalizedId)) {
+    return cache.get(normalizedId) ?? null;
+  }
+
+  try {
+    const classification = await fetchClassificationById(client, normalizedId);
+    const resolved: ResolvedClassification = {
+      id: classification.id,
+      name: classification.name,
+      identifier: classification.identifier,
+      label: primaryClassificationLabel(classification.name, classification.labels),
+      path: formatClassificationPath(
+        classification.namePath,
+        classification.labelPath,
+        classification.name,
+      ),
+      namePath: classification.namePath,
+      labelPath: classification.labelPath,
+    };
+
+    cache.set(normalizedId, resolved);
+    return resolved;
+  } catch {
+    cache.set(normalizedId, null);
+    return null;
+  }
+}
+
+async function attachClassificationContext<
+  T extends RuleConditionSummary | RuleActionSummary,
+>(client: AprimoClient, item: T, cache: Map<string, ResolvedClassification | null>): Promise<T> {
+  const ids = collectClassificationIds(item.details);
+  if (ids.length === 0) {
+    return item;
+  }
+
+  const resolved = (
+    await Promise.all(ids.map((id) => resolveClassification(client, id, cache)))
+  ).filter((entry): entry is ResolvedClassification => entry !== null);
+
+  if (resolved.length === 1) {
+    item.classification = resolved[0];
+  } else if (resolved.length > 1) {
+    item.classifications = resolved;
+  }
+
+  return item;
+}
+
+async function enrichRuleDetails(
+  client: AprimoClient,
+  rule: RuleSummary,
+): Promise<RuleSummary> {
+  const cache = new Map<string, ResolvedClassification | null>();
+
+  if (rule.conditions?.length) {
+    rule.conditions = await Promise.all(
+      rule.conditions.map((condition) =>
+        attachClassificationContext(client, condition, cache),
+      ),
+    );
+  }
+
+  if (rule.actions?.length) {
+    rule.actions = await Promise.all(
+      rule.actions.map((action) =>
+        attachClassificationContext(client, action, cache),
+      ),
+    );
+  }
+
+  return rule;
+}
+
 function mapRule(raw: RawRule, includeDetails: boolean): RuleSummary {
   const conditions = extractEmbeddedItems(raw._embedded?.conditions);
   const actions = extractEmbeddedItems(raw._embedded?.actions);
@@ -233,7 +374,12 @@ async function getRuleById(
     headers,
   );
 
-  return mapRule(raw, includeDetails);
+  const rule = mapRule(raw, includeDetails);
+  if (includeDetails) {
+    await enrichRuleDetails(client, rule);
+  }
+
+  return rule;
 }
 
 async function listAllRules(client: AprimoClient): Promise<RawRule[]> {

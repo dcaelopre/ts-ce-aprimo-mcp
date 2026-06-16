@@ -141,6 +141,7 @@ Fully quit Claude Desktop and open it again. MCP servers load at startup.
    - `search_classifications` — browse taxonomy
    - `search_field_definitions` — look up metadata field schema
    - `search_rules` — read DAM automation rules, conditions, and actions
+   - `search_settings` — read DAM settings and setting definitions
 
 4. Try a prompt, for example:
 

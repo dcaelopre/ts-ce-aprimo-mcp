@@ -476,3 +476,10 @@ export async function searchClassifications(
     pageSize: params.pageSize,
   });
 }
+
+export async function fetchClassificationById(
+  client: AprimoClient,
+  id: string,
+): Promise<ClassificationSummary> {
+  return getClassificationById(client, id, false);
+}

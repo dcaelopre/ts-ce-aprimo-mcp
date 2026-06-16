@@ -76,7 +76,7 @@ export function registerSearchRulesTool(
     {
       title: "Search Aprimo DAM Rules",
       description:
-        "Read Aprimo DAM automation rules only — by GUID, name, or filtered list. Returns name, enabled state, target, trigger, expression, version, and counts. Set includeDetails=true to include conditions and actions.",
+        "Read Aprimo DAM automation rules only — by GUID, name, or filtered list. Returns name, enabled state, target, trigger, expression, version, and counts. Set includeDetails=true to include conditions and actions with resolved classification names and paths (e.g. DAM > Taxonomy > Yes).",
       inputSchema: searchRulesSchema,
     },
     async ({ query, target, enabled, trigger, includeDetails, page, pageSize }) => {

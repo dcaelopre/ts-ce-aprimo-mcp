@@ -54,3 +54,8 @@ export const RULE_SUMMARY_HEADERS: Record<string, string> = {
 export const RULE_WITH_DETAILS_HEADERS: Record<string, string> = {
   "select-rule": "conditions,actions,createdby,modifiedby",
 };
+
+/** Setting definition GET/list with localized labels. */
+export const SETTING_DEFINITION_HEADERS: Record<string, string> = {
+  languages: "*",
+};
