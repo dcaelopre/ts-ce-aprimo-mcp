@@ -11,7 +11,7 @@ const searchSettingsSchema = z.object({
     .min(1)
     .optional()
     .describe(
-      "Setting name or definition GUID. Fetches the current value by name, or definition metadata by GUID.",
+      "Setting definition GUID, exact internal setting name, or keyword matching definition name/label.",
     ),
   names: z
     .array(z.string().min(1))
@@ -63,7 +63,7 @@ export function registerSearchSettingsTool(
     {
       title: "Search Aprimo DAM Settings",
       description:
-        "Read Aprimo DAM settings and setting definitions. Fetch current values by name (single or multiple), look up definition schema by GUID or name, or browse definitions with optional category filter. Supports scope (system, user, usergroup, site). Note: REST access may require settings to be whitelisted in ADAM.",
+        "Read Aprimo DAM settings and setting definitions. Fetch values by exact internal setting name (use names for multiple). Keyword search matches definition name or label. Browse definitions with page/pageSize. Values may require REST whitelist (.rest_SettingsWhitelist). Supports scope: system, user, usergroup, site.",
       inputSchema: searchSettingsSchema,
     },
     async ({

@@ -20,7 +20,7 @@ import {
   APRIMO_DAM_SCOPE,
 } from "./aprimo/scope.js";
 
-const SERVER_VERSION = "1.8.0";
+const SERVER_VERSION = "1.8.1";
 
 function createMcpServer(
   config: AprimoConfig,

@@ -40,6 +40,8 @@ export interface SettingValueSummary {
   value: string | null;
   scope: SettingScope | null;
   scopeId: string | null;
+  valueAccessible?: boolean;
+  accessNote?: string;
   definition?: SettingDefinitionSummary;
 }
 
@@ -54,6 +56,7 @@ export interface SearchSettingsResponse {
   totalCount?: number | null;
   settings?: SettingValueSummary[];
   definitions?: SettingDefinitionSummary[];
+  note?: string;
 }
 
 type RawSettingDefinition = Record<string, unknown> & {
@@ -84,6 +87,9 @@ interface SettingDefinitionPage {
   page?: number;
   pageSize?: number;
   totalCount?: number;
+  _links?: {
+    next?: { href?: string };
+  };
 }
 
 interface SettingCollection {
@@ -118,6 +124,8 @@ const SETTING_SCOPE_VALUES = new Set<string>([
   "usergroup",
   "site",
 ]);
+
+const MAX_DEFINITION_SCAN_PAGES = 50;
 
 function asString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
@@ -181,10 +189,7 @@ function mapSettingDefinition(raw: RawSettingDefinition): SettingDefinitionSumma
   };
 }
 
-function buildScopeQuery(
-  scope?: SettingScope,
-  scopeId?: string,
-): string {
+function buildScopeQuery(scope?: SettingScope, scopeId?: string): string {
   const params: string[] = [];
 
   if (scope) {
@@ -204,8 +209,43 @@ function validateScopeParams(scope?: SettingScope, scopeId?: string): void {
   }
 }
 
+function isSettingAccessError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return (
+    error.message.includes("Aprimo API error (403)") ||
+    error.message.includes("Aprimo API error (404)")
+  );
+}
+
+function settingAccessNote(error: unknown): string {
+  if (error instanceof Error && error.message.includes("Aprimo API error (403)")) {
+    return "Setting value is not accessible via REST. It may need to be added to the .rest_SettingsWhitelist system setting, or your account may lack permission.";
+  }
+
+  if (error instanceof Error && error.message.includes("Aprimo API error (404)")) {
+    return "Setting value was not found at the requested scope. Try another scope or use the exact internal setting name from the definition.";
+  }
+
+  return "Setting value could not be read via REST.";
+}
+
 export function isSettingScope(value: string): value is SettingScope {
   return SETTING_SCOPE_VALUES.has(value);
+}
+
+async function fetchSettingDefinitionsPage(
+  client: AprimoClient,
+  page: number,
+  pageSize: number,
+): Promise<SettingDefinitionPage> {
+  return client.get<SettingDefinitionPage>("/api/core/settingdefinitions", {
+    ...SETTING_DEFINITION_HEADERS,
+    page: String(page),
+    pageSize: String(pageSize),
+  });
 }
 
 async function getSettingDefinitionById(
@@ -221,50 +261,58 @@ async function getSettingDefinitionById(
   return mapSettingDefinition(raw);
 }
 
-async function listAllSettingDefinitions(
+async function scanSettingDefinitions(
   client: AprimoClient,
+  predicate: (definition: RawSettingDefinition) => boolean,
+  options?: { categoryId?: string },
 ): Promise<RawSettingDefinition[]> {
-  const all: RawSettingDefinition[] = [];
+  const matches: RawSettingDefinition[] = [];
   let page = 1;
   const pageSize = 200;
 
-  while (true) {
-    const response = await client.get<SettingDefinitionPage>(
-      `/api/core/settingdefinitions?page=${page}&pageSize=${pageSize}`,
-      SETTING_DEFINITION_HEADERS,
-    );
-
+  while (page <= MAX_DEFINITION_SCAN_PAGES) {
+    const response = await fetchSettingDefinitionsPage(client, page, pageSize);
     const items = response.items ?? [];
-    all.push(...items);
 
-    const totalCount = response.totalCount ?? all.length;
-    if (items.length === 0 || all.length >= totalCount) {
+    for (const item of items) {
+      if (options?.categoryId?.trim()) {
+        const categoryId = asString(item.categoryId);
+        if (
+          !categoryId ||
+          normalizeGuid(categoryId) !== normalizeGuid(options.categoryId.trim())
+        ) {
+          continue;
+        }
+      }
+
+      if (predicate(item)) {
+        matches.push(item);
+      }
+    }
+
+    const totalCount = response.totalCount ?? items.length;
+    if (!response._links?.next || items.length === 0 || page * pageSize >= totalCount) {
       break;
     }
 
     page += 1;
   }
 
-  return all;
+  return matches;
 }
 
-function findDefinitionByName(
+function findDefinitionsByLabel(
   definitions: RawSettingDefinition[],
   query: string,
+  exact = false,
 ): RawSettingDefinition[] {
   const normalizedQuery = normalizeText(query);
-  return definitions.filter(
-    (definition) => definition.name?.toLocaleLowerCase() === normalizedQuery,
-  );
-}
 
-function findDefinitionsByPartialName(
-  definitions: RawSettingDefinition[],
-  query: string,
-): RawSettingDefinition[] {
-  const normalizedQuery = normalizeText(query);
   return definitions.filter((definition) =>
-    definition.name?.toLocaleLowerCase().includes(normalizedQuery),
+    (definition.labels ?? []).some((entry) => {
+      const label = entry.value?.toLocaleLowerCase() ?? "";
+      return exact ? label === normalizedQuery : label.includes(normalizedQuery);
+    }),
   );
 }
 
@@ -322,13 +370,15 @@ async function fetchSettingValues(
         value: asString(raw.value),
         scope: scope ?? null,
         scopeId: scopeId?.trim() ? normalizeGuid(scopeId.trim()) : null,
+        valueAccessible: true,
       },
     ];
   }
 
   const namesQuery = `names=${encodeURIComponent(uniqueNames.join(","))}`;
-  const separator = scopeQuery ? "&" : "?";
-  const url = `/api/core/settings${scopeQuery}${scopeQuery ? separator : "?"}${namesQuery}`;
+  const url = scopeQuery
+    ? `/api/core/settings${scopeQuery}&${namesQuery}`
+    : `/api/core/settings?${namesQuery}`;
 
   const response = await client.get<SettingCollection>(url);
   const items = response.items ?? [];
@@ -340,6 +390,7 @@ async function fetchSettingValues(
       value: asString(match?.value),
       scope: scope ?? null,
       scopeId: scopeId?.trim() ? normalizeGuid(scopeId.trim()) : null,
+      valueAccessible: match !== undefined,
     };
   });
 }
@@ -348,12 +399,35 @@ async function attachDefinitions(
   client: AprimoClient,
   settings: SettingValueSummary[],
 ): Promise<SettingValueSummary[]> {
-  const definitions = await listAllSettingDefinitions(client);
-  const byName = new Map(
-    definitions
-      .filter((definition) => definition.name)
-      .map((definition) => [definition.name!.toLocaleLowerCase(), definition]),
+  const namesToFind = new Set(
+    settings.map((setting) => setting.name.toLocaleLowerCase()).filter(Boolean),
   );
+  const byName = new Map<string, RawSettingDefinition>();
+
+  let page = 1;
+  const pageSize = 200;
+
+  while (namesToFind.size > 0 && page <= MAX_DEFINITION_SCAN_PAGES) {
+    const response = await fetchSettingDefinitionsPage(client, page, pageSize);
+    const items = response.items ?? [];
+
+    for (const definition of items) {
+      const name = definition.name?.toLocaleLowerCase();
+      if (!name || !namesToFind.has(name)) {
+        continue;
+      }
+
+      byName.set(name, definition);
+      namesToFind.delete(name);
+    }
+
+    const totalCount = response.totalCount ?? items.length;
+    if (!response._links?.next || items.length === 0 || page * pageSize >= totalCount) {
+      break;
+    }
+
+    page += 1;
+  }
 
   return settings.map((setting) => {
     const raw = byName.get(setting.name.toLocaleLowerCase());
@@ -370,10 +444,13 @@ async function attachDefinitions(
 
 function buildListDefinitionsResponse(
   definitions: RawSettingDefinition[],
+  matchedBy: SearchSettingsResponse["matchedBy"],
   options?: {
     categoryId?: string;
     page?: number;
     pageSize?: number;
+    totalCount?: number | null;
+    note?: string;
   },
 ): SearchSettingsResponse {
   let filtered = definitions;
@@ -386,13 +463,54 @@ function buildListDefinitionsResponse(
 
   return {
     matchCount: filtered.length,
-    matchedBy: "list",
+    matchedBy,
     ...(options?.categoryId ? { categoryId: normalizeGuid(options.categoryId) } : {}),
     page: paginated.page,
     pageSize: paginated.pageSize,
-    totalCount: filtered.length,
+    totalCount: options?.totalCount ?? filtered.length,
+    ...(options?.note ? { note: options.note } : {}),
     definitions: paginated.items.map(mapSettingDefinition),
   };
+}
+
+async function findDefinitionsForQuery(
+  client: AprimoClient,
+  query: string,
+  categoryId?: string,
+): Promise<RawSettingDefinition[]> {
+  const exactNameMatches = await scanSettingDefinitions(
+    client,
+    (definition) => definition.name?.toLocaleLowerCase() === normalizeText(query),
+    { categoryId },
+  );
+  if (exactNameMatches.length > 0) {
+    return exactNameMatches;
+  }
+
+  const exactLabelMatches = await scanSettingDefinitions(
+    client,
+    (definition) => findDefinitionsByLabel([definition], query, true).length > 0,
+    { categoryId },
+  );
+  if (exactLabelMatches.length > 0) {
+    return exactLabelMatches;
+  }
+
+  const partialNameMatches = await scanSettingDefinitions(
+    client,
+    (definition) =>
+      definition.name?.toLocaleLowerCase().includes(normalizeText(query)) === true,
+    { categoryId },
+  );
+  if (partialNameMatches.length > 0) {
+    return partialNameMatches;
+  }
+
+  return scanSettingDefinitions(
+    client,
+    (definition) => findDefinitionsByLabel([definition], query, false).length > 0,
+    { categoryId },
+  );
 }
 
 export async function searchSettings(
@@ -405,6 +523,8 @@ export async function searchSettings(
   const scopeId = params.scopeId?.trim();
   const categoryId = params.categoryId?.trim();
   const includeDefinition = params.includeDefinition === true;
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 25;
 
   if (scope && !isSettingScope(scope)) {
     throw new Error(
@@ -443,8 +563,18 @@ export async function searchSettings(
         if (includeDefinition) {
           settings = settings.map((setting) => ({ ...setting, definition }));
         }
-      } catch {
-        settings = undefined;
+      } catch (error) {
+        settings = [
+          {
+            name: definition.name,
+            value: null,
+            scope: scope ?? null,
+            scopeId: scopeId ? normalizeGuid(scopeId) : null,
+            valueAccessible: false,
+            accessNote: settingAccessNote(error),
+            definition: includeDefinition ? definition : undefined,
+          },
+        ];
       }
     }
 
@@ -473,43 +603,75 @@ export async function searchSettings(
         ...(scopeId ? { scopeId: normalizeGuid(scopeId) } : {}),
         settings,
       };
-    } catch {
-      const allDefinitions = await listAllSettingDefinitions(client);
-      const exactMatches = findDefinitionByName(allDefinitions, query);
+    } catch (valueError) {
+      const definitionMatches = await findDefinitionsForQuery(
+        client,
+        query,
+        categoryId,
+      );
 
-      if (exactMatches.length > 0) {
-        return {
-          ...buildListDefinitionsResponse(exactMatches, {
-            categoryId,
-            page: params.page,
-            pageSize: params.pageSize,
-          }),
-          matchedBy: "name",
-        };
+      if (definitionMatches.length === 0) {
+        if (isSettingAccessError(valueError)) {
+          throw new Error(
+            `${settingAccessNote(valueError)} No setting definition matched "${query}" by internal name or label.`,
+          );
+        }
+
+        throw valueError;
       }
 
-      const partialMatches = findDefinitionsByPartialName(allDefinitions, query);
-      if (partialMatches.length === 0) {
-        throw new Error(
-          `No DAM setting or setting definition found matching "${query}"`,
-        );
-      }
+      const paginated = paginate(definitionMatches, page, pageSize);
+      const definitions = paginated.items.map(mapSettingDefinition);
+
+      const settings: SettingValueSummary[] = definitions.map((definition) => ({
+        name: definition.name,
+        value:
+          definition.defaultValue === null || definition.defaultValue === undefined
+            ? null
+            : String(definition.defaultValue),
+        scope: scope ?? null,
+        scopeId: scopeId ? normalizeGuid(scopeId) : null,
+        valueAccessible: false,
+        accessNote: settingAccessNote(valueError),
+        ...(includeDefinition ? { definition } : {}),
+      }));
 
       return {
-        ...buildListDefinitionsResponse(partialMatches, {
-          categoryId,
-          page: params.page,
-          pageSize: params.pageSize,
-        }),
+        matchCount: definitionMatches.length,
         matchedBy: "name",
+        ...(scope ? { scope } : {}),
+        ...(scopeId ? { scopeId: normalizeGuid(scopeId) } : {}),
+        ...(categoryId ? { categoryId: normalizeGuid(categoryId) } : {}),
+        page: paginated.page,
+        pageSize: paginated.pageSize,
+        totalCount: definitionMatches.length,
+        note:
+          "Matched setting definitions by name or label. Live values could not be read via REST; defaultValue is shown when available.",
+        definitions,
+        settings,
       };
     }
   }
 
-  const allDefinitions = await listAllSettingDefinitions(client);
-  return buildListDefinitionsResponse(allDefinitions, {
-    categoryId,
-    page: params.page,
-    pageSize: params.pageSize,
-  });
+  if (categoryId) {
+    const matches = await scanSettingDefinitions(client, () => true, { categoryId });
+    return buildListDefinitionsResponse(matches, "list", {
+      categoryId,
+      page,
+      pageSize,
+      totalCount: matches.length,
+    });
+  }
+
+  const response = await fetchSettingDefinitionsPage(client, page, pageSize);
+  const items = response.items ?? [];
+
+  return {
+    matchCount: items.length,
+    matchedBy: "list",
+    page: response.page ?? page,
+    pageSize: response.pageSize ?? pageSize,
+    totalCount: response.totalCount ?? items.length,
+    definitions: items.map(mapSettingDefinition),
+  };
 }
